@@ -1,26 +1,13 @@
 import psycopg2
-from psycopg2 import pool
 import json
 import streamlit as st
 from datetime import datetime, timedelta
 
 
-# --- NOVO: PISCINA DE CONEXÕES (POOL) ---
-# Isso mantém a conexão aberta na memória, deixando o app super rápido!
-@st.cache_resource
-def get_pool():
-    return psycopg2.pool.SimpleConnectionPool(1, 20, st.secrets["DB_URL"])
-
-
+# Conexão direta e segura para a nuvem do Supabase
 def conectar():
-    return get_pool().getconn()
+    return psycopg2.connect(st.secrets["DB_URL"])
 
-
-def liberar_conexao(conn):
-    get_pool().putconn(conn)
-
-
-# ----------------------------------------
 
 def iniciar_banco():
     conn = conectar()
@@ -81,7 +68,7 @@ def iniciar_banco():
     ''')
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def salvar_jogador(nome, whatsapp, senha, posicao, fortes, fracos):
@@ -97,7 +84,7 @@ def salvar_jogador(nome, whatsapp, senha, posicao, fortes, fracos):
         conn.rollback()
         sucesso = False
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return sucesso
 
 
@@ -107,7 +94,7 @@ def verificar_login(whatsapp, senha):
     cursor.execute('SELECT id, nome, perfil, whatsapp FROM jogadores WHERE whatsapp=%s AND senha=%s', (whatsapp, senha))
     usuario = cursor.fetchone()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return usuario
 
 
@@ -117,7 +104,7 @@ def alterar_perfil(id_jogador, novo_perfil):
     cursor.execute("UPDATE jogadores SET perfil = %s WHERE id = %s", (novo_perfil, id_jogador))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def excluir_jogador(id_jogador):
@@ -127,7 +114,7 @@ def excluir_jogador(id_jogador):
     cursor.execute("DELETE FROM presencas WHERE jogador_id = %s", (id_jogador,))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def atualizar_nota_jogador(jogador_id, nova_nota):
@@ -136,7 +123,7 @@ def atualizar_nota_jogador(jogador_id, nova_nota):
     cursor.execute("UPDATE jogadores SET nota_media = %s WHERE id = %s", (nova_nota, jogador_id))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def criar_partida(data, hora, local):
@@ -147,7 +134,7 @@ def criar_partida(data, hora, local):
                    (str(data), str(hora), local))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def obter_partida_ativa():
@@ -157,7 +144,7 @@ def obter_partida_ativa():
         "SELECT id, data_partida, local, COALESCE(hora_partida, 'A definir'), status, times_sorteados FROM partidas WHERE status IN ('ABERTA', 'FECHADA', 'EM AVALIAÇÃO') LIMIT 1")
     partida = cursor.fetchone()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return partida
 
 
@@ -167,7 +154,7 @@ def alterar_status_partida(partida_id, novo_status):
     cursor.execute("UPDATE partidas SET status = %s WHERE id = %s", (novo_status, partida_id))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def checar_limite_21(partida_id):
@@ -176,7 +163,7 @@ def checar_limite_21(partida_id):
     cursor.execute("SELECT COUNT(*) FROM presencas WHERE partida_id=%s", (partida_id,))
     total = cursor.fetchone()[0]
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return total >= 21
 
 
@@ -189,7 +176,7 @@ def confirmar_presenca(partida_id, jogador_id):
         cursor.execute("INSERT INTO presencas (partida_id, jogador_id) VALUES (%s, %s)", (partida_id, jogador_id))
         conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return True
 
 
@@ -202,7 +189,7 @@ def adicionar_convidado(partida_id, nome, nota, posicao):
         (partida_id, nome, nota, posicao))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return True
 
 
@@ -221,7 +208,7 @@ def obter_lista_presenca(partida_id):
     ''', (partida_id, partida_id))
     lista = cursor.fetchall()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return lista
 
 
@@ -231,7 +218,7 @@ def remover_presenca(partida_id, jogador_id):
     cursor.execute("DELETE FROM presencas WHERE partida_id=%s AND jogador_id=%s", (partida_id, jogador_id))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def remover_convidado_bd(presenca_id):
@@ -240,7 +227,7 @@ def remover_convidado_bd(presenca_id):
     cursor.execute("DELETE FROM presencas WHERE id=%s", (presenca_id,))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def verificar_limite_horario(data_partida_str, hora_partida_str):
@@ -268,7 +255,7 @@ def obter_colegas_equipe(partida_id, meu_jogador_id):
     cursor.execute("SELECT times_sorteados FROM partidas WHERE id=%s", (partida_id,))
     row = cursor.fetchone()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     if not row or not row[0]: return []
 
     dados_sorteio = json.loads(row[0])
@@ -327,7 +314,7 @@ def salvar_avaliacoes(partida_id, avaliador_id, notas_dict, craque_presenca_id):
                        (partida_id, avaliador_id, craque_presenca_id))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def verificar_ja_votou(partida_id, avaliador_id):
@@ -336,7 +323,7 @@ def verificar_ja_votou(partida_id, avaliador_id):
     cursor.execute("SELECT 1 FROM avaliacoes WHERE partida_id=%s AND avaliador_id=%s", (partida_id, avaliador_id))
     votou = cursor.fetchone() is not None
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return votou
 
 
@@ -376,7 +363,7 @@ def encerrar_partida_definitivamente(partida_id, time_campeao):
                    (time_campeao, partida_id))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def salvar_sorteio_oficial(partida_id, json_str):
@@ -385,7 +372,7 @@ def salvar_sorteio_oficial(partida_id, json_str):
     cursor.execute("UPDATE partidas SET times_sorteados = %s WHERE id = %s", (json_str, partida_id))
     conn.commit()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
 
 
 def obter_ultimo_campeao():
@@ -399,7 +386,7 @@ def obter_ultimo_campeao():
     ''')
     row = cursor.fetchone()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return row
 
 
@@ -422,5 +409,5 @@ def obter_top5_estatistica(campo):
     cursor.execute(query)
     res = cursor.fetchall()
     cursor.close()
-    liberar_conexao(conn)
+    conn.close()
     return res
